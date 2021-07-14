@@ -1,5 +1,4 @@
-import { Camera, Engine, Entity, Ray, Vector2, ACollider } from "oasis-engine";
-import { TouchItem } from "./TouchItem";
+import { Camera, Engine, Ray, Vector2, ACollider, Vector3 } from "oasis-engine";
 export class TouchManager {
   private CanvasEvent = {
     touchend: "touchend",
@@ -17,21 +16,24 @@ export class TouchManager {
     return this._ins;
   }
 
-  private touchItemHash: { [key: number]: TouchItem };
+  public nowListenHash: { [key: number]: ACollider[] };
+
   private webCanvas: any;
   private tempVPVec: Vector2;
   private tempCameraVPVec: Vector2;
   private tempRay: Ray;
+  private tempHit: RaycastHit;
   // 记录当前监听的状态
   private listenerState = 0;
   // @ts-ignore
   private engine: Engine;
 
   constructor() {
-    this.touchItemHash = {};
+    this.nowListenHash = {};
     this.tempVPVec = new Vector2();
     this.tempCameraVPVec = new Vector2();
     this.tempRay = new Ray();
+    this.tempHit = new RaycastHit();
   }
 
   public initEngine(engine: Engine) {
@@ -41,6 +43,30 @@ export class TouchManager {
       // @ts-ignore
       this.webCanvas = this.engine.canvas._webCanvas;
     }
+  }
+
+  public addTouch(type: TouchType, collider: ACollider) {
+    const nowListenHash = this.nowListenHash;
+    if (nowListenHash[type]) {
+      const index = nowListenHash[type].indexOf(collider);
+      if (index < 0) {
+        nowListenHash[type].push(collider);
+      }
+    } else {
+      nowListenHash[type] = [collider];
+    }
+    this.updateListener(OptType.Add, type);
+  }
+
+  public removeTouch(type: TouchType, collider: ACollider) {
+    const colliderList = this.nowListenHash[type];
+    if (colliderList) {
+      const index = colliderList.indexOf(collider);
+      if (index >= 0) {
+        colliderList.splice(index, 1);
+      }
+    }
+    this.updateListener(OptType.Del, type);
   }
 
   // 触摸时将屏幕上点转换为 viewport 上的点
@@ -104,32 +130,54 @@ export class TouchManager {
     const scene = this.engine.sceneManager.activeScene;
     // @ts-ignore
     const actCameras: Camera[] = scene._activeCameras;
-    const { touchItemHash, tempCameraVPVec, tempRay } = this;
-    // 遍历活动着的相机
+    // 对活动的相机的优先级进行一个排序，
+    actCameras.sort((camera1, camera2) => camera1.priority - camera2.priority);
+    const { tempCameraVPVec, tempRay } = this;
+    // 遍历活动着的相机，先检查后渲染的
     for (let index = actCameras.length - 1; index >= 0; index--) {
       const tempCamera = actCameras[index];
       // 这个相机是活动着的 并且点击区域在这个相机的 viewPort 中
       if (tempCamera.enabled && this.pointToRay(tempCamera, tempCameraVPVec)) {
-        const collider: ACollider = <ACollider>scene.raycast(tempRay);
+        // 当前 touch 事件对应的 entity
+        const colliderList: ACollider[] = this.nowListenHash[touchType];
+        // 只检查监听了这个事件的碰撞体
+        const collider: ACollider = this.hitCollider(tempRay, colliderList);
         if (collider) {
-          // 命中了一个实体
-          const entityID = collider.entity.instanceId;
-          const touchItem = touchItemHash[entityID];
-          const cbList = touchItem
-            ? touchItem.touchCBListHash[touchType]
-            : null;
-          if (cbList && cbList.length > 0) {
-            for (let i = 0; i < cbList.length; i++) {
+          // @ts-ignore
+          const cbListHash = collider.touchCBListHash;
+          const cbList = cbListHash ? cbListHash[touchType] : null;
+          const cbLen = cbList ? cbList.length : 0;
+          if (cbLen > 0) {
+            for (let i = 0; i < cbLen; i++) {
               cbList[i](evt);
             }
           }
         }
+        break;
       }
     }
   };
 
+  private hitCollider(ray: Ray, colliders: ACollider[]): ACollider {
+    let nearestHit = new RaycastHit();
+    const hit = this.tempHit;
+    for (let i = 0, len = colliders.length; i < len; i++) {
+      const collider = colliders[i];
+      if (!collider.entity.isActiveInHierarchy) {
+        continue;
+      }
+      // @ts-ignore
+      if (collider.raycast(ray, hit)) {
+        if (hit.distance < nearestHit.distance) {
+          nearestHit = hit;
+        }
+      }
+    }
+    return nearestHit.collider;
+  }
+
   // 只更新有差异的 canvas 监听
-  private updateListener = (optType: OptType, touchType: TouchType) => {
+  public updateListener = (optType: OptType, touchType: TouchType) => {
     const preState = (this.listenerState & touchType) !== 0;
     if (preState && optType == OptType.Add) {
       //已经监听，此时再增加则无需改变
@@ -194,17 +242,10 @@ export class TouchManager {
     }
   };
 
-  // 是否有必要监听这个类型
+  // 是否有必要监听这种类型
   private checkNeedListen = (touchType: TouchType): boolean => {
-    const touchItemHash = this.touchItemHash;
-    // 是否有监听这种触摸事件
-    for (const key in touchItemHash) {
-      const cbList = touchItemHash[key].touchCBListHash[touchType];
-      if (cbList && cbList.length > 0) {
-        return true;
-      }
-    }
-    return false;
+    const colliderList = this.nowListenHash[touchType];
+    return colliderList && colliderList.length > 0;
   };
 
   private onMouseDown = (mouseEvt: MouseEvent) => {
@@ -230,23 +271,17 @@ export class TouchManager {
       this.checkHit(TouchType.MouseUp, touchEvt);
     }
   };
+}
 
-  public regTouch(entity: Entity, type: TouchType, cbFun: Function) {
-    const touchItem = (this.touchItemHash[entity.instanceId] ||= new TouchItem(
-      entity
-    ));
-    touchItem.addTouch(type, cbFun);
-    // 增加一个手势 需要更新监听
-    this.updateListener(OptType.Add, type);
-  }
-
-  public removeTouch(entity: Entity, type: TouchType, cbFun?: Function) {
-    const touchItem = this.touchItemHash[entity.instanceId];
-    if (touchItem) {
-      touchItem.delTouch(type, cbFun);
-      // 移除一个手势 需要更新监听
-      this.updateListener(OptType.Del, type);
-    }
+export class RaycastHit {
+  public distance: number;
+  public collider: any;
+  public point: Vector3;
+  constructor() {
+    this.distance = Number.MAX_VALUE;
+    this.collider = null;
+    // @ts-ignore
+    this.point = null;
   }
 }
 
