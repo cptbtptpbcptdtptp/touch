@@ -44,3 +44,4 @@ config/components/es
 config/components/package.json
 **/package-lock.json
 /example
+types
