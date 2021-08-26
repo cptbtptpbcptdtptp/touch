@@ -1,4 +1,11 @@
-import { Camera, Engine, Ray, Vector2, ACollider, Vector3 } from "oasis-engine";
+import {
+  Camera,
+  Engine,
+  Ray,
+  Vector2,
+  ACollider,
+  HitResult,
+} from "oasis-engine";
 export class TouchManager {
   private CanvasEvent = {
     touchend: "touchend",
@@ -22,7 +29,7 @@ export class TouchManager {
   private tempVPVec: Vector2;
   private tempCameraVPVec: Vector2;
   private tempRay: Ray;
-  private tempHit: RaycastHit;
+  private tempHit: HitResult;
   // 记录当前监听的状态
   private listenerState = 0;
   // @ts-ignore
@@ -33,7 +40,7 @@ export class TouchManager {
     this.tempVPVec = new Vector2();
     this.tempCameraVPVec = new Vector2();
     this.tempRay = new Ray();
-    this.tempHit = new RaycastHit();
+    this.tempHit = new HitResult();
   }
 
   public initEngine(engine: Engine) {
@@ -158,8 +165,9 @@ export class TouchManager {
     }
   };
 
-  private hitCollider(ray: Ray, colliders: ACollider[]): ACollider {
-    let nearestHit = new RaycastHit();
+  private hitCollider(ray: Ray, colliders: ACollider[]) {
+    let nearestHit = new HitResult();
+    nearestHit.distance = Number.MAX_VALUE;
     const hit = this.tempHit;
     for (let i = 0, len = colliders.length; i < len; i++) {
       const collider = colliders[i];
@@ -167,7 +175,7 @@ export class TouchManager {
         continue;
       }
       // @ts-ignore
-      if (collider.raycast(ray, hit)) {
+      if (collider._raycast(ray, hit)) {
         if (hit.distance < nearestHit.distance) {
           nearestHit = hit;
         }
@@ -271,18 +279,6 @@ export class TouchManager {
       this.checkHit(TouchType.MouseUp, touchEvt);
     }
   };
-}
-
-export class RaycastHit {
-  public distance: number;
-  public collider: any;
-  public point: Vector3;
-  constructor() {
-    this.distance = Number.MAX_VALUE;
-    this.collider = null;
-    // @ts-ignore
-    this.point = null;
-  }
 }
 
 export enum OptType {

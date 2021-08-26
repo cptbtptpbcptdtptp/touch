@@ -1,5 +1,5 @@
 {
-  "version": "0.0.3",
+  "version": "0.0.13",
   "name": "@oasis-engine/touch",
   "description": "oasis touch",
   "browser": "dist/index.browser.js",
@@ -27,7 +27,7 @@
     "vite": "^2.5.0"
   },
   "dependencies": {
-    "oasis-engine": "^0.4.12"
+    "oasis-engine": "0.5.3-alpha.2"
   },
   "main": "rollup.config.js",
   "directories": {

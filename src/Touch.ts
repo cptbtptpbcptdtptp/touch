@@ -1,13 +1,12 @@
-import { BoxCollider, Component, Entity } from "oasis-engine";
+import { ACollider, Component, Entity } from "oasis-engine";
 import { TouchManager, TouchType } from "./TouchManager";
 export class Touch extends Component {
-  // @ts-ignore
-  private collider: BoxCollider;
+  private collider: ACollider;
   constructor(entity: Entity) {
     super(entity);
-    const collider = this.entity.getComponent(BoxCollider);
-    if (collider) {
-      this.collider = collider;
+
+    this.collider = this.entity.getComponent(ACollider);
+    if (this.collider) {
       // @ts-ignore
       this.collider.touchCBListHash = {};
     } else {
